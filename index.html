@@ -1,0 +1,343 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.0.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <title>Music Queue</title>
+
+    <script src="https://cdn.jsdelivr.net/npm/vue@2/dist/vue.js"></script>
+    <style>
+    </style>
+    <script>
+        // This URL is hardcoded to the version I can deploy. If you deploy your
+        // own copy you can change this accordingly.
+        const queueDomain = 'oop91rp1wk.execute-api.us-east-1.amazonaws.com';
+        const queueEnv = 'production';
+        const s3QueuePath = 'https://s3.amazonaws.com/music-queue.queue.production.queue';
+
+        document.addEventListener('DOMContentLoaded', function () {
+            new Vue({
+                el: '#app',
+                data: {
+                    queues: {
+                        'beatport-artists': {
+                            name: 'Beatport Artists',
+                            info: {},
+                        },
+                        'discogs-artists': {
+                            name: 'Discogs Artists',
+                            info: {},
+                        },
+                    },
+                    activeQueue: '',
+                    view: 'list-queues',
+                    next: {},
+                    missingItems: [],
+                },
+                mounted() {
+                    this.refreshQueueInfos();
+                },
+                methods: {
+                    percent(queueName, property) {
+                        const info = this.queues[queueName].info;
+                        return Math.round(info[property] / info.total * 10000) / 100;
+                    },
+                    requestNext() {
+                        this.next.externalURL = '';
+
+                        const url = `https://${queueDomain}/${queueEnv}/queue/${this.activeQueue}/next`;
+                        fetch(url)
+                            .then(resp => resp.json())
+                            .then(resp => {
+                                if (resp.error) {
+                                    alert(resp.error);
+                                    return;
+                                }
+
+                                this.next = resp;
+                            });
+                    },
+                    refreshQueueInfos() {
+                        for (const queue of Object.keys(this.queues)) {
+                            this.refreshQueueInfo(queue);
+                        }
+                    },
+                    refreshQueueInfo(queueName) {
+                        const url = `${s3QueuePath}/queue/${queueName}/info.json`;
+                        fetch(url)
+                            .then(resp => resp.json())
+                            .then(resp => {
+                                this.queues[queueName].info = resp;
+                            });
+                    },
+                    confirmExists(id) {
+                        this.next.externalURL = '';
+                        const url = `https://${queueDomain}/${queueEnv}/queue/${this.activeQueue}/${id}/exists`;
+                        fetch(url)
+                            .then(() => {
+                                this.requestNext();
+                                this.refreshQueueInfo(this.activeQueue);
+                            });
+                    },
+                    confirmMissing(id) {
+                        this.next.externalURL = '';
+                        const url = `https://${queueDomain}/${queueEnv}/queue/${this.activeQueue}/${id}/missing`;
+                        fetch(url)
+                            .then(() => {
+                                this.requestNext();
+                                this.refreshQueueInfo(this.activeQueue);
+                            });
+                    },
+                    confirmIgnore(id) {
+                        this.next.externalURL = '';
+                        const url = `https://${queueDomain}/${queueEnv}/queue/${this.activeQueue}/${id}/ignore`;
+                        fetch(url)
+                            .then(() => {
+                                this.requestNext();
+                                this.refreshQueueInfo(this.activeQueue);
+                            });
+                    },
+                    confirmSkip(id) {
+                        this.next.externalURL = '';
+                        this.requestNext();
+                    },
+                    showMissing() {
+                        this.view = 'missing';
+                        this.loadMissing();
+                    },
+                    loadMissing() {
+                        this.missingItems = [];
+                        const url = `https://${queueDomain}/${queueEnv}/queue/${this.activeQueue}/missing`;
+                        fetch(url)
+                            .then(resp => resp.json())
+                            .then(resp => {
+                                if (resp.error) {
+                                    alert(resp.error);
+                                    return;
+                                }
+
+                                this.missingItems = resp.items;
+                            });
+                    },
+                    openQueue(queueName) {
+                        this.activeQueue = queueName;
+                        this.view = 'show-queue';
+                        this.requestNext();
+                    },
+                    openMissing(queueName) {
+                        this.activeQueue = queueName;
+                        this.view = 'missing';
+                        this.loadMissing();
+                    },
+                }
+            })
+        })
+    </script>
+</head>
+
+<body>
+    <header class="p-3 bg-dark text-white">
+        <div class="container">
+            <div class="d-flex flex-wrap align-items-center justify-content-center justify-content-lg-start">
+                <ul class="nav col-12 col-lg-auto me-lg-auto mb-2 justify-content-center mb-md-0">
+                    <h4>Music Queue</h4>
+                </ul>
+
+                <div class="text-end">
+                    <a href="https://github.com/elliotchance/music-queue/issues" target="_blank"
+                        class="btn btn-info" role="button">Report a Bug / Feature Request</a>
+                </div>
+            </div>
+        </div>
+    </header>
+    <div class="container-fluid" id="app">
+        <main role="main" class="container">
+            <div class="row">
+                <div class="col">&nbsp;</div>
+            </div>
+            
+            <div v-if="view === 'list-queues'">
+                <div class="row">
+                    <div class="col">
+                        <strong>Music Queue</strong> is a project that aims to identify
+                        gaps in the RateYourMusic database.
+                    </div>
+                </div>
+
+                <div class="row">
+                    <div class="col">&nbsp;</div>
+                </div>
+            </div>
+
+            <div v-for="queue, key in queues" v-if="view === 'list-queues'">
+                <div class="row" style="padding-top: 10px">
+                    <div class="col-2" style="padding-top: 5px">
+                        <a href="#" @click="() => openQueue(key)">{{ queue.name }}</a>
+                    </div>
+                    <div class="col-7" style="padding-top: 10px" v-if="!queue.info.total">
+                        Loading...
+                    </div>
+                    <div class="col-7" style="padding-top: 10px" v-if="queue.info.total">
+                        <div class="progress">
+                          <div class="progress-bar bg-success" role="progressbar"
+                            :style="'width: ' + percent(key, 'exists') + '%'"
+                            :aria-valuenow="percent(key, 'exists')"
+                            aria-valuemin="0" aria-valuemax="100" v-if="queue.info.exists">
+                                {{ percent(key, 'exists') }}%
+                            </div>
+
+                          <div class="progress-bar bg-danger" role="progressbar"
+                            :style="'width: ' + percent(key, 'missing') + '%'"
+                            :aria-valuenow="percent(key, 'missing')"
+                            aria-valuemin="0" aria-valuemax="100" v-if="queue.info.missing">
+                                {{ percent(key, 'missing') }}%
+                            </div>
+
+                          <div class="progress-bar bg-warning" role="progressbar"
+                            :style="'width: ' + percent(key, 'ignored') + '%'"
+                            :aria-valuenow="percent(key, 'ignored')"
+                            aria-valuemin="0" aria-valuemax="100" v-if="queue.info.ignored">
+                                {{ percent(key, 'ignored') }}%
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-2">
+                        <small v-if="queue.info.total">({{ queue.info.completed.toLocaleString() }} / {{ queue.info.total.toLocaleString() }})</small>
+                    </div>
+                    <div class="col-1">
+                        <a href="#" @click="() => openMissing(key)" v-if="queue.info.missing">{{ queue.info.missing }} missing</a>
+                    </div>
+                </div>
+            </div>
+
+            <div v-if="view === 'show-queue'">
+                <div class="row">
+                    <div class="col">
+                        <nav aria-label="breadcrumb">
+                          <ol class="breadcrumb">
+                            <li class="breadcrumb-item"><a href="#" @click="view = 'list-queues'; activeQueue = ''">Queues</a></li>
+                            <li class="breadcrumb-item active" aria-current="page">{{ queues[activeQueue].name }}</li>
+                          </ol>
+                        </nav>
+                    </div>
+                </div>
+
+                <div class="row">
+                    <div class="col">
+                        <table class="table">
+                          <thead>
+                            <tr>
+                              <th scope="col">Exists</th>
+                              <th scope="col">Missing</th>
+                              <th scope="col">Ignored</th>
+                              <th scope="col">Undecided</th>
+                              <th scope="col">Total</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            <tr>
+                              <td>{{ queues[activeQueue].info.exists.toLocaleString() }} ({{ percent(activeQueue, 'exists') }}%)</td>
+                              <td>
+                                <a href="#" @click="() => showMissing()">
+                                    {{ queues[activeQueue].info.missing.toLocaleString() }}
+                                    ({{ percent(activeQueue, 'missing') }}%)
+                                </a>
+                              </td>
+                              <td>{{ queues[activeQueue].info.ignored.toLocaleString() }} ({{ percent(activeQueue, 'ignored') }}%)</td>
+                              <td>{{ queues[activeQueue].info.undecided.toLocaleString() }} ({{ percent(activeQueue, 'undecided') }}%)</td>
+                              <td>{{ queues[activeQueue].info.completed.toLocaleString() }} / {{ queues[activeQueue].info.total.toLocaleString() }} ({{ percent(activeQueue, 'completed') }}%)</td>
+                            </tr>
+                          </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div class="row">
+                    <div class="col">&nbsp;</div>
+                </div>
+
+                <div class="row">
+                    <div class="col text-center">
+                        <strong>Instructions:</strong><br/>
+                        Click on the following link (it will open in a new
+                        tab/window). Search RYM to see if this artist exists and
+                        click the appropriate button below.<br/>
+                        <strong>If you are unsure, you should click "I don't know".</strong>
+                    </div>
+                </div>
+
+                <div class="row">
+                    <div class="col">&nbsp;</div>
+                </div>
+
+                <div class="row" v-if="!next.externalURL">
+                    <div class="col text-center">Loading...</div>
+                </div>
+
+                <div class="row" v-if="next.externalURL">
+                    <div class="col text-center">
+                        <h1><a :href="next.externalURL" target="_blank">{{ next.externalURL }}</a></h1><br/>
+                        <small></small>
+                    </div>
+                </div>
+
+                <div class="row" v-if="next.externalURL">
+                    <div class="col text-center">
+                        <h3>Does the artist exist in RYM?</h3>
+                    </div>
+                </div>
+
+                <div class="row" v-if="next.externalURL">
+                    <div class="col text-center">
+                        <button type="button" class="btn btn-success btn-lg" @click="() => confirmExists(next.id)">Yes, it does</button>
+                        <button type="button" class="btn btn-danger btn-lg" @click="() => confirmMissing(next.id)">No, it does not</button>
+                        <button type="button" class="btn btn-warning btn-lg" @click="() => confirmIgnore(next.id)">Ignore, this is not valid</button>
+                        <button type="button" class="btn btn-primary btn-lg" @click="() => confirmSkip(next.id)">I don't know / skip</button>
+                    </div>
+                </div>
+            </div>
+
+            <div v-if="view === 'missing'">
+                <div class="row">
+                    <div class="col">
+                        <nav aria-label="breadcrumb">
+                          <ol class="breadcrumb">
+                            <li class="breadcrumb-item"><a href="#" @click="view = 'list-queues'; activeQueue = ''">Queues</a></li>
+                            <li class="breadcrumb-item"><a href="#" @click="view = 'show-queue'">{{ queues[activeQueue].name }}</a></li>
+                            <li class="breadcrumb-item active" aria-current="page">Missing</li>
+                          </ol>
+                        </nav>
+                    </div>
+                </div>
+
+                <div class="row">
+                    <div class="col">
+                        <table class="table">
+                          <thead>
+                            <tr>
+                              <th scope="col">ID</th>
+                              <th scope="col">URL</th>
+                              <th scope="col">&nbsp;</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            <tr v-for="item in missingItems">
+                              <th scope="row">{{ item.id }}</th>
+                              <td><a :href="item.externalURL" target="_blank">{{ item.externalURL }}</a></td>
+                              <td class="text-right">
+                                &nbsp;
+                              </td>
+                            </tr>
+                          </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.0.2/dist/js/bootstrap.bundle.min.js"> </script>
+</body>
+
+</html>

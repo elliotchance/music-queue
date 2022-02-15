@@ -1,0 +1,10 @@
+{
+	"nextID": 1,
+	"total": 100,
+	"ignored": 0,
+	"exists": 0,
+	"missing": 0,
+	"completed": 0,
+	"undecided": 100,
+	"externalURL": "https://www.beatport.com/artist/a/${id}"
+}

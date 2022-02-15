@@ -1,0 +1,135 @@
+service: queue
+app: music-queue
+org: elliotchance
+frameworkVersion: '3'
+
+custom:
+  queueBucketName: ${self:app}.${self:service}.${opt:stage, 'dev'}.queue
+
+provider:
+  name: aws
+  runtime: nodejs12.x
+  memorySize: 128
+  iam:
+    role:
+      statements:
+        - Effect: Allow
+          Action:
+            - s3:PutObject
+            - s3:PutObjectAcl
+            - s3:ListBucket
+            - s3:GetObject
+            - s3:HeadObject
+            - s3:DeleteObject
+          Resource:
+            - arn:aws:s3:::${self:custom.queueBucketName}
+            - arn:aws:s3:::${self:custom.queueBucketName}/*
+  environment:
+    QUEUE_BUCKET_NAME: ${self:custom.queueBucketName}
+
+functions:
+  next:
+    handler: next.handler
+    events:
+      - http:
+          path: queue/{queueName}/next
+          method: GET
+          cors: true
+          request:
+            parameters:
+               paths:
+                 queueName: true
+
+  missing:
+    handler: missing.handler
+    events:
+      - http:
+          path: queue/{queueName}/{id}/missing
+          method: GET
+          cors: true
+          request:
+            parameters:
+               paths:
+                 queueName: true
+                 id: true
+
+  exists:
+    handler: exists.handler
+    events:
+      - http:
+          path: queue/{queueName}/{id}/exists
+          method: GET
+          cors: true
+          request:
+            parameters:
+               paths:
+                 queueName: true
+                 id: true
+
+  ignore:
+    handler: ignore.handler
+    events:
+      - http:
+          path: queue/{queueName}/{id}/ignore
+          method: GET
+          cors: true
+          request:
+            parameters:
+               paths:
+                 queueName: true
+                 id: true
+
+  update-info:
+    handler: update-info.handler
+    events:
+      - http:
+          path: queue/{queueName}/info
+          method: PUT
+          cors: true
+          request:
+            parameters:
+               paths:
+                 queueName: true
+
+  list-missing:
+    handler: list-missing.handler
+    events:
+      - http:
+          path: queue/{queueName}/missing
+          method: GET
+          cors: true
+          request:
+            parameters:
+               paths:
+                 queueName: true
+
+resources:
+  Resources:
+    QueueBucketAllowPublicReadPolicy:
+      Type: AWS::S3::BucketPolicy
+      Properties:
+        Bucket: ${self:custom.queueBucketName}
+        PolicyDocument:
+          Version: "2012-10-17"
+          Statement: 
+            - Effect: Allow
+              Action: 
+                - "s3:GetObject"
+                - "s3:ListBucket"
+              Resource:
+                - arn:aws:s3:::${self:custom.queueBucketName}
+                - arn:aws:s3:::${self:custom.queueBucketName}/*
+              Principal: "*"
+
+    QueueBucket:
+      Type: AWS::S3::Bucket
+      Properties:
+        BucketName: ${self:custom.queueBucketName}
+        CorsConfiguration:
+         CorsRules:
+           - AllowedOrigins:
+               - '*'
+             AllowedHeaders:
+               - '*'
+             AllowedMethods:
+               - GET
